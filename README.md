@@ -116,37 +116,10 @@ Final reports are saved as Markdown files with:
 [HH:MM:SS] Agent Name: Message | Metadata: {...}
 ```
 
-## Benchmark Metrics
+## Analysis
 
-The benchmark evaluates both approaches on:
-
-**Efficiency Metrics:**
-- Time to completion
-- Token usage
-- API calls
-- Inter-agent communications
-
-**Quality Metrics:**
-- Coherence score
-- Coverage score
-- Factual accuracy
-- Structure score
-
-**Coordination Metrics:**
-- Successful handoffs
-- Error recovery
-- Adaptive replanning
-
-## Test Scenarios
-
-1. **Simple**: Basic factual report (500 words)
-2. **Medium**: Analysis with pros/cons (750 words)
-3. **Complex**: Strategic recommendations (1000 words)
-
-## Expected Insights
-
-- **Orchestrator**: Better for tasks requiring strict coordination and consistency
-- **Swarm**: Better for tasks benefiting from parallel exploration and emergent solutions
+![Orchestrator Analysis](analysis/sample_orchestrator_analysis.png)
+![Swarm Analysis](analysis/sample_swarm_analysis.png)
 
 ## Requirements
 
