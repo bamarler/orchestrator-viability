@@ -1,0 +1,1 @@
+"""Swarm team package - decentralized peer-to-peer approach."""
