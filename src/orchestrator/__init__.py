@@ -1,0 +1,1 @@
+"""Orchestrator team package - centralized coordination approach."""
