@@ -12,16 +12,16 @@ from src.orchestrator.analysis_agent import AnalysisAgent
 from src.orchestrator.writer_agent import WriterAgent
 from src.logging_utils import AgentLogger, save_report, log_agent_communication
 
-# Define state structure
 class OrchestratorState(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
     current_agent: str
     task_complete: bool
     current_instruction: str
     report: str
-    logger: AgentLogger  # Add logger to state
+    iteration_count: int
+    max_iterations: int
+    logger: AgentLogger
 
-# Initialize agents
 orchestrator = OrchestratorAgent()
 research_agent = ResearchAgent()
 analysis_agent = AnalysisAgent()
@@ -36,17 +36,17 @@ def orchestrator_node(state: OrchestratorState) -> OrchestratorState:
     
     new_state = state.copy()
     new_state["messages"].extend(result["messages"])
+    new_state["iteration_count"] += 1
     
     if result["next_agent"]:
         new_state["current_agent"] = result["next_agent"]
         new_state["current_instruction"] = result["instruction"]
         
-        # Log the delegation
         log_agent_communication(
             state["logger"],
             "Orchestrator",
             result["next_agent"],
-            f"Delegating task",
+            f"Delegating task (iteration {new_state['iteration_count']})",
             result["instruction"]
         )
     else:
@@ -67,21 +67,20 @@ def research_node(state: OrchestratorState) -> OrchestratorState:
     
     new_state = state.copy()
     new_state["messages"].extend(result["messages"])
+    new_state["iteration_count"] += 1
     
-    # Update orchestrator's task status
     if result["complete"]:
         orchestrator.update_task_status("research", True)
         research_agent.log("Research phase completed")
     
-    # Log communication back to orchestrator
     log_agent_communication(
         state["logger"],
         "Research Agent",
         "Orchestrator",
-        "Research complete, returning results"
+        "Research complete, returning results",
+        f"Found {len(result.get('findings', []))} findings"
     )
     
-    # Return to orchestrator
     new_state["current_agent"] = "orchestrator"
     
     return new_state
@@ -98,21 +97,20 @@ def analysis_node(state: OrchestratorState) -> OrchestratorState:
     
     new_state = state.copy()
     new_state["messages"].extend(result["messages"])
+    new_state["iteration_count"] += 1
     
-    # Update orchestrator's task status
     if result["complete"]:
         orchestrator.update_task_status("analysis", True)
         analysis_agent.log("Analysis phase completed")
     
-    # Log communication back to orchestrator
     log_agent_communication(
         state["logger"],
         "Analysis Agent",
         "Orchestrator",
-        "Analysis complete, returning insights"
+        "Analysis complete, returning insights",
+        f"Generated {len(result.get('analysis', []))} analyses"
     )
     
-    # Return to orchestrator
     new_state["current_agent"] = "orchestrator"
     
     return new_state
@@ -129,21 +127,21 @@ def writer_node(state: OrchestratorState) -> OrchestratorState:
     
     new_state = state.copy()
     new_state["messages"].extend(result["messages"])
+    new_state["iteration_count"] += 1
     
     if result["complete"]:
         new_state["report"] = result["report"]
         orchestrator.update_task_status("writer", True)
-        writer_agent.log(f"Report completed. Word count: {result['word_count']}")
+        writer_agent.log(f"Report completed. Word count: {result.get('word_count', 'Unknown')}")
     
-    # Log communication back to orchestrator
     log_agent_communication(
         state["logger"],
         "Writer Agent",
         "Orchestrator",
-        "Writing complete, report ready"
+        "Writing complete, report ready",
+        f"Word count: {result.get('word_count', 'Unknown')}"
     )
     
-    # Return to orchestrator
     new_state["current_agent"] = "orchestrator"
     
     return new_state
@@ -151,6 +149,10 @@ def writer_node(state: OrchestratorState) -> OrchestratorState:
 def route_next_agent(state: OrchestratorState) -> str:
     """Route to the next agent based on current state."""
     if state["task_complete"]:
+        return END
+    
+    if state["iteration_count"] >= state["max_iterations"]:
+        state["logger"].log("System", f"Maximum iterations ({state['max_iterations']}) reached.")
         return END
     
     agent = state["current_agent"]
@@ -169,16 +171,13 @@ def build_orchestrator_graph():
     """Build the orchestrator team graph."""
     workflow = StateGraph(OrchestratorState)
     
-    # Add nodes
     workflow.add_node("orchestrator", orchestrator_node)
     workflow.add_node("research", research_node)
     workflow.add_node("analysis", analysis_node)
     workflow.add_node("writer", writer_node)
     
-    # Add edges
     workflow.add_edge(START, "orchestrator")
     
-    # Conditional routing from orchestrator
     workflow.add_conditional_edges(
         "orchestrator",
         route_next_agent,
@@ -191,7 +190,6 @@ def build_orchestrator_graph():
         }
     )
     
-    # All agents return to orchestrator
     workflow.add_edge("research", "orchestrator")
     workflow.add_edge("analysis", "orchestrator")
     workflow.add_edge("writer", "orchestrator")
@@ -200,13 +198,14 @@ def build_orchestrator_graph():
 
 def run_orchestrator_team(task: str, word_count: int = 500) -> str:
     """Run the orchestrator team on a given task."""
-    # Initialize logger
+    if os.path.exists('shared_memory.json'):
+        os.remove('shared_memory.json')
+    
     logger = AgentLogger("orchestrator")
     logger.log("System", f"Starting orchestrator team for task: {task}")
     logger.log("System", f"Target word count: {word_count}")
-    logger.log_separator("Task Execution")
+    logger.log_separator("Task Execution - Centralized Orchestration")
     
-    # Set logger for all agents
     orchestrator.set_logger(logger)
     
     graph = build_orchestrator_graph()
@@ -217,27 +216,42 @@ def run_orchestrator_team(task: str, word_count: int = 500) -> str:
         "task_complete": False,
         "current_instruction": "",
         "report": "",
+        "iteration_count": 0,
+        "max_iterations": 25,
         "logger": logger
     }
     
-    # Run the graph
     result = graph.invoke(initial_state)
     
-    # Save the report
-    if result["report"]:
+    report = result.get("report")
+    if not report:
+        try:
+            from src.tools import read_from_memory
+            report = read_from_memory.invoke("final_report")
+            if "No data found" not in report:
+                logger.log("System", "Retrieved report from shared memory")
+            else:
+                report = "Report generation did not complete successfully."
+                logger.log("System", "Report generation failed - no report found")
+        except Exception as e:
+            logger.log("System", f"Error retrieving report: {str(e)}")
+            report = "Report generation did not complete successfully."
+    
+    if report and "Report generation did not complete" not in report:
         logger.log_separator("Final Report")
         logger.log("System", "Report generation completed successfully")
+        logger.log("System", f"Total iterations: {result['iteration_count']}")
         
         report_file = save_report(
-            result["report"],
+            report,
             "orchestrator",
             task,
             logger.get_log_number()
         )
         logger.log("System", f"Report saved to: {report_file}")
     else:
-        logger.log("System", "Report generation failed - no report produced")
+        logger.log("System", "Report generation incomplete - check logs for issues")
     
     logger.log_separator("End of Execution")
     
-    return result["report"]
+    return report

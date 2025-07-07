@@ -10,7 +10,7 @@ from src.orchestrator.orchestrator_graph import run_orchestrator_team
 if __name__ == "__main__":
     # You can modify the task here
     task = "renewable energy trends in 2024"
-    word_count = 500
+    word_count = 1000
     
     print(f"Running Orchestrator Team")
     print(f"Task: {task}")
